@@ -1,0 +1,1 @@
+worker: pthon discord_bot.py
