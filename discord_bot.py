@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import discord
 from discord.ext import commands
+import asyncpg
 
 load_dotenv()
 
@@ -17,10 +18,48 @@ intents.voice_states = True
 
 bot = commands.Bot(intents=intents)
 
-user_levels = defaultdict(lambda: {'xp': 0, 'level': 1, 'last_message_time': None, 'last_voice_time': None})
-
-# 관리자 역할 ID를 환경 변수에서 불러오기
 admin_role_id = int(os.getenv('ADMIN_ROLE_ID'))
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+async def init_db():
+    bot.db = await asyncpg.create_pool(DATABASE_URL)
+
+async def close_db():
+    await bot.db.close()
+
+async def create_tables():
+    async with bot.db.acquire() as conn:
+        await conn.execute('''
+            CREATE TABLE IF NOT EXISTS user_levels (
+                user_id BIGINT PRIMARY KEY,
+                xp INTEGER NOT NULL,
+                level INTEGER NOT NULL,
+                last_message_time TIMESTAMP,
+                last_voice_time TIMESTAMP
+            )
+        ''')
+
+async def load_user_data(user_id):
+    async with bot.db.acquire() as conn:
+        user_data = await conn.fetchrow('SELECT * FROM user_levels WHERE user_id = $1', user_id)
+        if user_data:
+            return {
+                'xp': user_data['xp'],
+                'level': user_data['level'],
+                'last_message_time': user_data['last_message_time'],
+                'last_voice_time': user_data['last_voice_time']
+            }
+        else:
+            return {'xp': 0, 'level': 1, 'last_message_time': None, 'last_voice_time': None}
+
+async def save_user_data(user_id, data):
+    async with bot.db.acquire() as conn:
+        await conn.execute('''
+            INSERT INTO user_levels(user_id, xp, level, last_message_time, last_voice_time)
+            VALUES($1, $2, $3, $4, $5)
+            ON CONFLICT(user_id) DO UPDATE
+            SET xp = EXCLUDED.xp, level = EXCLUDED.level, last_message_time = EXCLUDED.last_message_time, last_voice_time = EXCLUDED.last_voice_time
+        ''', user_id, data['xp'], data['level'], data['last_message_time'], data['last_voice_time'])
 
 def calculate_xp_to_next_level(level):
     base_xp = 50
@@ -106,7 +145,8 @@ async def on_message(message):
         return
 
     user_id = message.author.id
-    user_data = user_levels[user_id]
+    user_data = await load_user_data(user_id)
+    
     now = datetime.now()
 
     if user_data['last_message_time'] is None or (now - user_data['last_message_time']) >= timedelta(minutes=1):
@@ -121,6 +161,8 @@ async def on_message(message):
             await message.channel.send(f"{message.author.mention}님, 레벨업 했습니다! 현재 레벨: {user_data['level']} (다음 레벨까지 {calculate_xp_to_next_level(user_data['level']) - user_data['xp']} XP 필요)")
             await assign_role_on_level_up(message.channel, message.author, user_data['level'])
 
+        await save_user_data(user_id, user_data)
+
     await bot.process_commands(message)
 
 @tasks.loop(minutes=1)
@@ -130,7 +172,10 @@ async def voice_activity_xp():
         for member in guild.members:
             if member.voice is not None and member.voice.channel is not None:
                 user_id = member.id
-                user_data = user_levels[user_id]
+                user_data = await load_user_data(user_id)
+                
+                if not user_data:
+                    user_data = {'xp': 0, 'level': 1, 'last_message_time': None, 'last_voice_time': None}
 
                 if user_data['last_voice_time'] is None or (now - user_data['last_voice_time']) >= timedelta(minutes=10):
                     xp_gain = random.randint(10, 30)
@@ -146,12 +191,14 @@ async def voice_activity_xp():
                             await channel.send(f"{member.mention}님, 음성 채팅 활동으로 레벨업 했습니다! 현재 레벨: {user_data['level']} (다음 레벨까지 {calculate_xp_to_next_level(user_data['level']) - user_data['xp']} XP 필요)")
                         await assign_role_on_level_up(channel, member, user_data['level'])
 
+                    await save_user_data(user_id, user_data)
+
 @bot.slash_command(name="레벨", description="현재 레벨을 확인합니다.")
 async def level(ctx: discord.ApplicationContext):
     user_id = ctx.author.id
-    user_data = user_levels.get(user_id, None)
+    user_data = await load_user_data(user_id)
 
-    if user_data is None:
+    if not user_data:
         await ctx.respond(f"{ctx.author.mention}님, 아직 레벨이 없습니다.")
     else:
         current_level = user_data['level']
@@ -166,7 +213,7 @@ async def leaderboard(ctx: discord.ApplicationContext):
 
     for member in guild.members:
         if not member.bot:
-            user_data = user_levels.get(member.id)
+            user_data = await load_user_data(member.id)
             if user_data:
                 leaderboard_data.append((member.name, user_data['level'], user_data['xp']))
 
@@ -178,7 +225,7 @@ async def leaderboard(ctx: discord.ApplicationContext):
     for idx, (name, level, xp) in enumerate(top_users, 1):
         leaderboard_message += f"{idx}. {name} - 레벨 {level} ({xp} XP)\n"
 
-    await ctx.respond(f"```{leaderboard_message}````")
+    await ctx.respond(f"```{leaderboard_message}```")
 
 @bot.slash_command(name="지급", description="XP를 지급합니다.")
 async def give_xp(ctx: discord.ApplicationContext, member: discord.Member, xp_amount: int):
@@ -187,7 +234,7 @@ async def give_xp(ctx: discord.ApplicationContext, member: discord.Member, xp_am
         return
 
     user_id = member.id
-    user_data = user_levels[user_id]
+    user_data = await load_user_data(user_id)
     
     user_data['xp'] += xp_amount
     xp_to_next_level = calculate_xp_to_next_level(user_data['level'])
@@ -205,6 +252,8 @@ async def give_xp(ctx: discord.ApplicationContext, member: discord.Member, xp_am
     else:
         await ctx.respond(f"{member.mention}님에게 {xp_amount} XP가 추가되었습니다. 현재 XP: {user_data['xp']}/{xp_to_next_level}")
 
+    await save_user_data(user_id, user_data)
+
 @bot.slash_command(name="회수", description="XP를 회수합니다.")
 async def remove_xp(ctx: discord.ApplicationContext, member: discord.Member, xp_amount: int):
     if admin_role_id not in [role.id for role in ctx.author.roles]:
@@ -212,7 +261,7 @@ async def remove_xp(ctx: discord.ApplicationContext, member: discord.Member, xp_
         return
 
     user_id = member.id
-    user_data = user_levels[user_id]
+    user_data = await load_user_data(user_id)
 
     user_data['xp'] -= xp_amount
     current_level = user_data['level']
@@ -235,8 +284,9 @@ async def remove_xp(ctx: discord.ApplicationContext, member: discord.Member, xp_
     
     await ctx.respond(f"{member.mention}님에게서 {xp_amount} XP를 회수했습니다. 현재 레벨: {user_data['level']} (현재 XP: {user_data['xp']}/{xp_to_next_level})")
 
+    await save_user_data(user_id, user_data)
 
-@bot.slash_command(name="훈남봇_설명", description="봇의 기능을 설명합니다.", guild_ids=os.getenv('GUILD_ID').split(','))
+@bot.slash_command(name="훈남봇_설명", description="봇의 기능을 설명합니다.")
 async def bot_description(ctx: discord.ApplicationContext):
     description = (
         "**훈남봇 기능 목록:**\n\n"
@@ -250,6 +300,8 @@ async def bot_description(ctx: discord.ApplicationContext):
 
 @bot.event
 async def on_ready():
+    await init_db()
+    await create_tables()
     print(f'Logged in as {bot.user}!')
     voice_activity_xp.start()
 
