@@ -216,18 +216,14 @@ async def bot_description(ctx: discord.ApplicationContext):
     )
     await ctx.respond(description)
 
+TEST_GUILD_ID = int(os.getenv('TEST_GUILD_ID'))
+bot = commands.Bot(intents=intents, debug_guilds=[TEST_GUILD_ID])
 @bot.event
 async def on_ready():
     await init_db()
     await create_tables()
     print(f'Logged in as {bot.user}!')
     voice_activity_xp.start()
-    
-    # 글로벌 명령어 동기화
-    print("Syncing global slash commands...")
-    await bot.sync_commands()
-    print("Global slash commands synced successfully!")
-
 
 bot_token = os.getenv('DISCORD_BOT_TOKEN')
 bot.run(bot_token)
