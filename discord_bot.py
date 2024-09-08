@@ -218,12 +218,19 @@ async def bot_description(ctx: discord.ApplicationContext):
 
 TEST_GUILD_ID = int(os.getenv('TEST_GUILD_ID'))
 bot = commands.Bot(intents=intents, debug_guilds=[TEST_GUILD_ID])
+
 @bot.event
 async def on_ready():
     await init_db()
     await create_tables()
     print(f'Logged in as {bot.user}!')
     voice_activity_xp.start()
+    
+    # 테스트 길드 명령어 동기화
+    print("Syncing slash commands for test guild...")
+    await bot.sync_commands(guild_id=TEST_GUILD_ID)
+    print("Slash commands synced successfully for test guild!")
+
 
 bot_token = os.getenv('DISCORD_BOT_TOKEN')
 bot.run(bot_token)
