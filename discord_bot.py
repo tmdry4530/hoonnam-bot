@@ -4,6 +4,7 @@ from discord.ext import tasks
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import discord
+from discord import app_commands
 from discord.ext import commands
 import asyncpg
 
@@ -24,7 +25,7 @@ intents.guilds = True
 intents.guild_messages = True
 intents.voice_states = True
 
-bot = commands.Bot(intents=intents, command_prefix="!")
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 async def init_db():
     bot.db = await asyncpg.create_pool(DATABASE_URL)
@@ -152,13 +153,10 @@ async def voice_activity_xp():
 async def level(interaction: discord.Interaction):
     user_id = interaction.user.id
     user_data = await load_user_data(user_id)
-    if not user_data:
-        await interaction.response.send_message(f"{interaction.user.mention}님, 아직 레벨이 없습니다.")
-    else:
-        current_level = user_data['level']
-        current_xp = user_data['xp']
-        xp_to_next_level = calculate_xp_to_next_level(current_level)
-        await interaction.response.send_message(f"{interaction.user.mention}님의 현재 레벨: {current_level}, 현재 XP: {current_xp}/{xp_to_next_level}")
+    current_level = user_data['level']
+    current_xp = user_data['xp']
+    xp_to_next_level = calculate_xp_to_next_level(current_level)
+    await interaction.response.send_message(f"{interaction.user.mention}님의 현재 레벨: {current_level}, 현재 XP: {current_xp}/{xp_to_next_level}")
 
 @bot.tree.command(name="순위", description="서버 리더보드를 확인합니다.")
 async def leaderboard(interaction: discord.Interaction):
@@ -216,10 +214,6 @@ async def bot_description(interaction: discord.Interaction):
         "6. **역할 자동 부여**: 특정 레벨에 도달하면 자동으로 역할이 부여됩니다.\n"
     )
     await interaction.response.send_message(description)
-
-
-TEST_GUILD_ID = int(os.getenv('TEST_GUILD_ID'))
-bot = commands.Bot(intents=intents, debug_guilds=[TEST_GUILD_ID])
 
 @bot.event
 async def on_ready():
