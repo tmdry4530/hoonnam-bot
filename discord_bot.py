@@ -215,6 +215,7 @@ async def bot_description(interaction: discord.Interaction):
     )
     await interaction.response.send_message(description)
 
+TEST_GUILD_ID = int(os.getenv('TEST_GUILD_ID'))
 @bot.event
 async def on_ready():
     await init_db()
@@ -223,8 +224,11 @@ async def on_ready():
     voice_activity_xp.start()
     
     print("Syncing slash commands...")
-    await bot.tree.sync()
-    print("Slash commands synced successfully!")
+    try:
+        synced = await bot.tree.sync(guild=discord.Object(id=TEST_GUILD_ID))
+        print(f"Synced {len(synced)} command(s)")
+    except Exception as e:
+        print(f"Failed to sync commands: {e}")
 
 bot_token = os.getenv('DISCORD_BOT_TOKEN')
 bot.run(bot_token)
