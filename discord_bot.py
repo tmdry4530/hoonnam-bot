@@ -160,17 +160,26 @@ async def level(ctx: discord.ApplicationContext):
 async def leaderboard(ctx: discord.ApplicationContext):
     guild = ctx.guild
     leaderboard_data = []
+
     async with bot.db.acquire() as conn:
-        records = await conn.fetch('SELECT user_id, level, xp FROM user_levels ORDER BY level DESC, xp DESC LIMIT 10')
+        records = await conn.fetch('''
+            SELECT user_id, level, xp 
+            FROM user_levels 
+            ORDER BY level DESC, xp DESC 
+            LIMIT 10
+        ''')
+
         for record in records:
             member = guild.get_member(record['user_id'])
             if member:
                 leaderboard_data.append((member.name, record['level'], record['xp']))
 
-    leaderboard_message = "서버 리더보드 (상위 10명):\n" + "\n".join(
-        f"{idx}. {name} - 레벨 {level} ({xp} XP)" for idx, (name, level, xp) in enumerate(leaderboard_data, 1)
-    )
+    leaderboard_message = "서버 리더보드 (상위 10명):\n"
+    for idx, (name, level, xp) in enumerate(leaderboard_data, 1):
+        leaderboard_message += f"{idx}. {name} - 레벨 {level} ({xp} XP)\n"
+
     await ctx.respond(f"```{leaderboard_message}```")
+
 
 @bot.slash_command(name="지급", description="XP를 지급합니다.")
 async def give_xp(ctx: discord.ApplicationContext, member: discord.Member, xp_amount: int):
