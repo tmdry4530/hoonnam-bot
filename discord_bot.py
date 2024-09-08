@@ -24,7 +24,7 @@ intents.guilds = True
 intents.guild_messages = True
 intents.voice_states = True
 
-bot = commands.Bot(intents=intents)
+bot = commands.Bot(intents=intents, command_prefix="!")
 
 async def init_db():
     bot.db = await asyncpg.create_pool(DATABASE_URL)
@@ -148,19 +148,22 @@ async def voice_activity_xp():
                     user_data = await handle_xp_change(guild.system_channel, member, user_data, xp_gain)
                     await save_user_data(user_id, user_data)
 
-@bot.slash_command(name="레벨", description="현재 레벨을 확인합니다.")
-async def level(ctx: discord.ApplicationContext):
-    user_data = await load_user_data(ctx.author.id)
-    current_level = user_data['level']
-    current_xp = user_data['xp']
-    xp_to_next_level = calculate_xp_to_next_level(current_level)
-    await ctx.respond(f"{ctx.author.mention}님의 현재 레벨: {current_level}, 현재 XP: {current_xp}/{xp_to_next_level}")
+@bot.tree.command(name="레벨", description="현재 레벨을 확인합니다.")
+async def level(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    user_data = await load_user_data(user_id)
+    if not user_data:
+        await interaction.response.send_message(f"{interaction.user.mention}님, 아직 레벨이 없습니다.")
+    else:
+        current_level = user_data['level']
+        current_xp = user_data['xp']
+        xp_to_next_level = calculate_xp_to_next_level(current_level)
+        await interaction.response.send_message(f"{interaction.user.mention}님의 현재 레벨: {current_level}, 현재 XP: {current_xp}/{xp_to_next_level}")
 
-@bot.slash_command(name="순위", description="서버 리더보드를 확인합니다.")
-async def leaderboard(ctx: discord.ApplicationContext):
-    guild = ctx.guild
+@bot.tree.command(name="순위", description="서버 리더보드를 확인합니다.")
+async def leaderboard(interaction: discord.Interaction):
+    guild = interaction.guild
     leaderboard_data = []
-
     async with bot.db.acquire() as conn:
         records = await conn.fetch('''
             SELECT user_id, level, xp 
@@ -168,7 +171,6 @@ async def leaderboard(ctx: discord.ApplicationContext):
             ORDER BY level DESC, xp DESC 
             LIMIT 10
         ''')
-
         for record in records:
             member = guild.get_member(record['user_id'])
             if member:
@@ -178,33 +180,32 @@ async def leaderboard(ctx: discord.ApplicationContext):
     for idx, (name, level, xp) in enumerate(leaderboard_data, 1):
         leaderboard_message += f"{idx}. {name} - 레벨 {level} ({xp} XP)\n"
 
-    await ctx.respond(f"```{leaderboard_message}```")
+    await interaction.response.send_message(f"```{leaderboard_message}```")
 
-
-@bot.slash_command(name="지급", description="XP를 지급합니다.")
-async def give_xp(ctx: discord.ApplicationContext, member: discord.Member, xp_amount: int):
-    if ADMIN_ROLE_ID not in [role.id for role in ctx.author.roles]:
-        await ctx.respond("이 명령어는 관리자만 사용할 수 있습니다.")
+@bot.tree.command(name="지급", description="XP를 지급합니다.")
+async def give_xp(interaction: discord.Interaction, member: discord.Member, xp_amount: int):
+    if ADMIN_ROLE_ID not in [role.id for role in interaction.user.roles]:
+        await interaction.response.send_message("이 명령어는 관리자만 사용할 수 있습니다.")
         return
 
     user_data = await load_user_data(member.id)
-    user_data = await handle_xp_change(ctx.channel, member, user_data, xp_amount)
+    user_data = await handle_xp_change(interaction.channel, member, user_data, xp_amount)
     await save_user_data(member.id, user_data)
-    await ctx.respond(f"{member.mention}님에게 {xp_amount} XP가 지급되었습니다.")
+    await interaction.response.send_message(f"{member.mention}님에게 {xp_amount} XP가 지급되었습니다.")
 
-@bot.slash_command(name="회수", description="XP를 회수합니다.")
-async def remove_xp(ctx: discord.ApplicationContext, member: discord.Member, xp_amount: int):
-    if ADMIN_ROLE_ID not in [role.id for role in ctx.author.roles]:
-        await ctx.respond("이 명령어는 관리자만 사용할 수 있습니다.")
+@bot.tree.command(name="회수", description="XP를 회수합니다.")
+async def remove_xp(interaction: discord.Interaction, member: discord.Member, xp_amount: int):
+    if ADMIN_ROLE_ID not in [role.id for role in interaction.user.roles]:
+        await interaction.response.send_message("이 명령어는 관리자만 사용할 수 있습니다.")
         return
 
     user_data = await load_user_data(member.id)
-    user_data = await handle_xp_change(ctx.channel, member, user_data, -xp_amount)
+    user_data = await handle_xp_change(interaction.channel, member, user_data, -xp_amount)
     await save_user_data(member.id, user_data)
-    await ctx.respond(f"{member.mention}님에게서 {xp_amount} XP를 회수했습니다.")
+    await interaction.response.send_message(f"{member.mention}님에게서 {xp_amount} XP를 회수했습니다.")
 
-@bot.slash_command(name="훈남봇_설명", description="봇의 기능을 설명합니다.")
-async def bot_description(ctx: discord.ApplicationContext):
+@bot.tree.command(name="훈남봇_설명", description="봇의 기능을 설명합니다.")
+async def bot_description(interaction: discord.Interaction):
     description = (
         "**훈남봇 기능 목록:**\n\n"
         "1. **레벨 확인**: `/레벨` 명령어로 자신의 현재 레벨과 경험치를 확인할 수 있습니다.\n"
@@ -214,7 +215,8 @@ async def bot_description(ctx: discord.ApplicationContext):
         "5. **자동 경험치 획득**: 메시지 작성 및 음성 채팅 참여로 자동으로 경험치를 획득합니다.\n"
         "6. **역할 자동 부여**: 특정 레벨에 도달하면 자동으로 역할이 부여됩니다.\n"
     )
-    await ctx.respond(description)
+    await interaction.response.send_message(description)
+
 
 TEST_GUILD_ID = int(os.getenv('TEST_GUILD_ID'))
 bot = commands.Bot(intents=intents, debug_guilds=[TEST_GUILD_ID])
@@ -226,11 +228,9 @@ async def on_ready():
     print(f'Logged in as {bot.user}!')
     voice_activity_xp.start()
     
-    # 테스트 길드 명령어 동기화
-    print("Syncing slash commands for test guild...")
-    await bot.sync_commands(guild_id=TEST_GUILD_ID)
-    print("Slash commands synced successfully for test guild!")
-
+    print("Syncing slash commands...")
+    await bot.tree.sync()
+    print("Slash commands synced successfully!")
 
 bot_token = os.getenv('DISCORD_BOT_TOKEN')
 bot.run(bot_token)
