@@ -222,9 +222,11 @@ async def on_ready():
     print(f'Logged in as {bot.user}!')
     voice_activity_xp.start()
     
+    # 슬래시 명령어 동기화 추가
     print("Syncing slash commands...")
-    await bot.tree.sync()
+    await bot.sync_commands()
     print("Slash commands synced successfully!")
+
 
 bot_token = os.getenv('DISCORD_BOT_TOKEN')
 bot.run(bot_token)
