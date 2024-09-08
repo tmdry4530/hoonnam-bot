@@ -221,10 +221,14 @@ async def on_ready():
     await create_tables()
     print(f'Logged in as {bot.user}!')
     voice_activity_xp.start()
-    
+
     print("Syncing slash commands...")
-    await bot.tree.sync()
-    print("Slash commands synced successfully!")
+    try:
+        await bot.tree.sync()
+        print("Slash commands synced successfully!")
+    except Exception as e:
+        print(f"Error syncing slash commands: {e}")
+
 
 bot_token = os.getenv('DISCORD_BOT_TOKEN')
 bot.run(bot_token)
