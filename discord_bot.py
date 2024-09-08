@@ -139,16 +139,18 @@ async def on_message(message):
 async def voice_activity_xp():
     now = datetime.now()
     for guild in bot.guilds:
-        for member in guild.members:
-            if member.voice and member.voice.channel:
-                user_id = member.id
-                user_data = await load_user_data(user_id)
-                
-                if user_data['last_voice_time'] is None or (now - user_data['last_voice_time']) >= VOICE_XP_COOLDOWN:
-                    xp_gain = random.randint(10, 30)
-                    user_data['last_voice_time'] = now
-                    user_data = await handle_xp_change(guild.system_channel, member, user_data, xp_gain)
-                    await save_user_data(user_id, user_data)
+        for voice_channel in guild.voice_channels:
+            for member in voice_channel.members:
+                if not member.bot:
+                    user_id = member.id
+                    user_data = await load_user_data(user_id)
+                    
+                    if user_data['last_voice_time'] is None or (now - user_data['last_voice_time']) >= VOICE_XP_COOLDOWN:
+                        xp_gain = random.randint(10, 30)
+                        user_data['last_voice_time'] = now
+                        user_data = await handle_xp_change(guild.system_channel, member, user_data, xp_gain)
+                        await save_user_data(user_id, user_data)
+                        print(f"Voice XP given to {member.name}: {xp_gain}")
 
 @bot.tree.command(name="레벨", description="현재 레벨을 확인합니다.")
 async def level(interaction: discord.Interaction):
