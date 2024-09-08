@@ -24,6 +24,7 @@ intents.message_content = True
 intents.guilds = True
 intents.guild_messages = True
 intents.voice_states = True
+intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -211,7 +212,6 @@ async def bot_description(interaction: discord.Interaction):
         "3. **경험치 지급**: `/지급` 명령어로 특정 사용자에게 경험치를 지급할 수 있습니다. (관리자 전용)\n"
         "4. **경험치 회수**: `/회수` 명령어로 특정 사용자의 경험치를 회수할 수 있습니다. (관리자 전용)\n"
         "5. **자동 경험치 획득**: 메시지 작성 및 음성 채팅 참여로 자동으로 경험치를 획득합니다.\n"
-        "6. **역할 자동 부여**: 특정 레벨에 도달하면 자동으로 역할이 부여됩니다.\n"
     )
     await interaction.response.send_message(description)
 
